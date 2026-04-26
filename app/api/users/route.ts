@@ -50,15 +50,15 @@ export async function GET() {
       });
     } else {
       const row = userMap.get(key)!;
-      if (s.status === "waiting") row.has_waiting = true;
       // user_idがあれば補完
       if (s.user_id && !row.user_id) row.user_id = s.user_id;
       if (s.user_email && !row.user_email) row.user_email = s.user_email;
-      // 最新セッション更新
+      // 最新セッション更新（has_waitingも最新セッションで上書き）
       if (s.created_at > row.last_activity) {
         row.latest_session_id = s.id;
         row.status = s.status;
         row.last_activity = s.created_at;
+        row.has_waiting = s.status === "waiting";
       }
     }
   }
