@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 
 type Message = { id: string; role: string; content: string; created_at: string };
-type Session = { user_email: string | null; status: string; memo?: string | null };
+type Session = { user_email: string | null; user_id: string | null; status: string; memo?: string | null };
 
 type CustomerInfo = {
   email: string;
@@ -89,26 +89,31 @@ export default function AdminChatDetailPage() {
 
   async function load() {
     const [{ data: sess }, { data: msgs }] = await Promise.all([
-      supabase.from("chat_sessions").select("user_email, status, memo").eq("id", sessionId).single(),
+      supabase.from("chat_sessions").select("user_email, user_id, status, memo").eq("id", sessionId).single(),
       supabase.from("chat_messages").select("*").eq("session_id", sessionId).order("created_at"),
     ]);
     if (sess) {
       setSession(sess);
       setMemo(sess.memo ?? "");
-      if (sess.user_email) loadCustomer(sess.user_email);
+      if (sess.user_id) loadCustomer(undefined, sess.user_id);
+      else if (sess.user_email) loadCustomer(sess.user_email);
     }
     if (msgs) setMessages(msgs);
   }
 
-  const loadCustomer = useCallback(async (email: string) => {
+  const loadCustomer = useCallback(async (email?: string, userId?: string) => {
     setCustomerLoading(true);
-    const res = await fetch(`/api/customer?email=${encodeURIComponent(email)}`);
+    const params = userId
+      ? `userId=${encodeURIComponent(userId)}`
+      : `email=${encodeURIComponent(email ?? "")}`;
+    const res = await fetch(`/api/customer?${params}`);
     const data = await res.json();
     setCustomer(data);
     setCustomerLoading(false);
   }, []);
 
-  const loadEmailLogs = useCallback(async (email: string) => {
+  const loadEmailLogs = useCallback(async (email: string | null | undefined) => {
+    if (!email) return;
     setEmailLoading(true);
     const res = await fetch(`/api/email?email=${encodeURIComponent(email)}`);
     const data = await res.json();
@@ -146,7 +151,7 @@ export default function AdminChatDetailPage() {
     setSending(true);
     await fetch("/api/staff-reply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: content }) });
     setSending(false);
-    const { data } = await supabase.from("chat_sessions").select("user_email, status, memo").eq("id", sessionId).single();
+    const { data } = await supabase.from("chat_sessions").select("user_email, user_id, status, memo").eq("id", sessionId).single();
     if (data) setSession(data);
   }
 
