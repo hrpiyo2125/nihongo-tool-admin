@@ -8,7 +8,8 @@ export default function DeployWatcher() {
   useEffect(() => {
     async function check() {
       try {
-        const res = await fetch("/api/version", { cache: "no-store" });
+        const MAIN_SITE = process.env.NEXT_PUBLIC_MAIN_SITE_URL ?? "https://nihongo-tool.com";
+        const res = await fetch(`${MAIN_SITE}/api/version`, { cache: "no-store" });
         if (!res.ok) return;
         const { buildId } = await res.json();
         if (baseId.current === null) { baseId.current = buildId; return; }
