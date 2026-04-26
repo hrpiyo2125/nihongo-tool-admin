@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 
-type Message = { id: string; role: string; content: string; created_at: string };
+type Message = { id: string; session_id: string; role: string; content: string; created_at: string };
 type Session = { user_email: string | null; user_id: string | null; status: string; memo?: string | null };
+type SessionMeta = { id: string; created_at: string; status: string };
 
 type CustomerInfo = {
   email: string;
@@ -48,6 +49,7 @@ export default function AdminChatDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [allSessions, setAllSessions] = useState<SessionMeta[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -56,17 +58,14 @@ export default function AdminChatDetailPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const supabase = createClient();
 
-  // 右パネル
   const [activeTab, setActiveTab] = useState<"info" | "email" | "memo">("info");
   const [customer, setCustomer] = useState<CustomerInfo | null>(null);
   const [customerLoading, setCustomerLoading] = useState(false);
 
-  // メモ
   const [memo, setMemo] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [memoSaved, setMemoSaved] = useState(false);
 
-  // メール
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
@@ -77,6 +76,7 @@ export default function AdminChatDetailPage() {
   useEffect(() => {
     if (sessionStorage.getItem("admin_auth") !== "ok") { router.replace("/"); return; }
     load();
+    // 現在のセッションへのリアルタイム購読
     const channel = supabase.channel(`admin:${sessionId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `session_id=eq.${sessionId}` }, (payload) => {
         setMessages((prev) => [...prev, payload.new as Message]);
@@ -88,17 +88,17 @@ export default function AdminChatDetailPage() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   async function load() {
-    const [{ data: sess }, { data: msgs }] = await Promise.all([
-      supabase.from("chat_sessions").select("user_email, user_id, status, memo").eq("id", sessionId).single(),
-      supabase.from("chat_messages").select("*").eq("session_id", sessionId).order("created_at"),
-    ]);
-    if (sess) {
-      setSession(sess);
-      setMemo(sess.memo ?? "");
-      if (sess.user_id) loadCustomer(undefined, sess.user_id);
-      else if (sess.user_email) loadCustomer(sess.user_email);
-    }
-    if (msgs) setMessages(msgs);
+    const res = await fetch(`/api/session/${sessionId}`);
+    const data = await res.json();
+    if (data.error) return;
+
+    setSession(data.session);
+    setMemo(data.session.memo ?? "");
+    setAllSessions(data.allSessions ?? []);
+    setMessages(data.messages ?? []);
+
+    if (data.session.user_id) loadCustomer(undefined, data.session.user_id);
+    else if (data.session.user_email) loadCustomer(data.session.user_email);
   }
 
   const loadCustomer = useCallback(async (email?: string, userId?: string) => {
@@ -151,8 +151,9 @@ export default function AdminChatDetailPage() {
     setSending(true);
     await fetch("/api/staff-reply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: content }) });
     setSending(false);
-    const { data } = await supabase.from("chat_sessions").select("user_email, user_id, status, memo").eq("id", sessionId).single();
-    if (data) setSession(data);
+    const res = await fetch(`/api/session/${sessionId}`);
+    const data = await res.json();
+    if (data.session) setSession(data.session);
   }
 
   async function handleSaveMemo() {
@@ -191,6 +192,24 @@ export default function AdminChatDetailPage() {
     cursor: "pointer" as const,
   });
 
+  // セッション区切りを挿入したメッセージリストを生成
+  function buildThreadMessages() {
+    if (allSessions.length <= 1) return messages;
+    const result: (Message | { type: "divider"; sessionId: string; created_at: string; status: string })[] = [];
+    let currentSessionId: string | null = null;
+    for (const msg of messages) {
+      if (msg.session_id !== currentSessionId) {
+        const meta = allSessions.find((s) => s.id === msg.session_id);
+        if (meta) result.push({ type: "divider", sessionId: meta.id, created_at: meta.created_at, status: meta.status });
+        currentSessionId = msg.session_id;
+      }
+      result.push(msg);
+    }
+    return result;
+  }
+
+  const threadMessages = buildThreadMessages();
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8f4f4", fontFamily: "'Hiragino Sans','Yu Gothic','Noto Sans JP',sans-serif" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexDirection: "column", height: "100vh" }}>
@@ -201,7 +220,7 @@ export default function AdminChatDetailPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <p style={{ fontWeight: 800, fontSize: 15, margin: 0 }}>{session?.user_email ?? "読み込み中..."}</p>
-              {session && <p style={{ fontSize: 11, margin: "2px 0 0", opacity: 0.85 }}>{STATUS_LABEL[session.status] ?? session.status}</p>}
+              {session && <p style={{ fontSize: 11, margin: "2px 0 0", opacity: 0.85 }}>{STATUS_LABEL[session.status] ?? session.status} · 計{allSessions.length}セッション</p>}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={handleNotify} disabled={notifying} style={{ padding: "7px 14px", borderRadius: 20, border: "1.5px solid rgba(255,255,255,0.8)", background: "transparent", color: "white", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
@@ -214,33 +233,45 @@ export default function AdminChatDetailPage() {
           </div>
         </div>
 
-        {/* メインエリア */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
           {/* 左：チャット */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 10 }}>
-              {messages.map((m) => (
-                <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                  <span style={{ fontSize: 10, color: "#bbb", marginBottom: 2 }}>{ROLE_LABEL[m.role] ?? m.role}</span>
-                  <div style={{
-                    maxWidth: "78%", padding: "9px 13px",
-                    borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                    background: m.role === "user" ? "linear-gradient(135deg,#f4b9b9,#e49bfd)" : m.role === "staff" ? "#e8f4ff" : "white",
-                    color: m.role === "user" ? "white" : "#333",
-                    fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-                  }}>
-                    {m.content}
+              {threadMessages.map((item) => {
+                if ("type" in item && item.type === "divider") {
+                  return (
+                    <div key={`divider-${item.sessionId}`} style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
+                      <div style={{ flex: 1, height: 1, background: "rgba(200,170,240,0.3)" }} />
+                      <span style={{ fontSize: 10, color: "#bbb", whiteSpace: "nowrap" }}>
+                        {fmtFull(item.created_at)} {STATUS_LABEL[item.status] ?? item.status}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: "rgba(200,170,240,0.3)" }} />
+                    </div>
+                  );
+                }
+                const m = item as Message;
+                return (
+                  <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
+                    <span style={{ fontSize: 10, color: "#bbb", marginBottom: 2 }}>{ROLE_LABEL[m.role] ?? m.role}</span>
+                    <div style={{
+                      maxWidth: "78%", padding: "9px 13px",
+                      borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                      background: m.role === "user" ? "linear-gradient(135deg,#f4b9b9,#e49bfd)" : m.role === "staff" ? "#e8f4ff" : "white",
+                      color: m.role === "user" ? "white" : "#333",
+                      fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                    }}>
+                      {m.content}
+                    </div>
+                    <span style={{ fontSize: 10, color: "#ccc", marginTop: 2 }}>{fmtFull(m.created_at)}</span>
                   </div>
-                  <span style={{ fontSize: 10, color: "#ccc", marginTop: 2 }}>{fmtFull(m.created_at)}</span>
-                </div>
-              ))}
+                );
+              })}
               {messages.length === 0 && <p style={{ textAlign: "center", color: "#ccc", fontSize: 13, marginTop: 40 }}>メッセージはまだありません</p>}
               <div ref={bottomRef} />
             </div>
 
-            {/* 入力バー */}
             <div style={{ padding: "10px 12px", borderTop: "0.5px solid rgba(200,170,240,0.2)", display: "flex", gap: 8, alignItems: "flex-end", background: "white", flexShrink: 0 }}>
               <textarea
                 ref={inputRef}
@@ -263,8 +294,6 @@ export default function AdminChatDetailPage() {
 
           {/* 右：顧客パネル */}
           <div style={{ width: 320, borderLeft: "1px solid rgba(200,170,240,0.2)", background: "white", display: "flex", flexDirection: "column", flexShrink: 0 }}>
-
-            {/* タブ */}
             <div style={{ display: "flex", borderBottom: "1px solid rgba(200,170,240,0.2)", padding: "0 8px" }}>
               <button style={tabStyle("info")} onClick={() => setActiveTab("info")}>👤 顧客情報</button>
               <button style={tabStyle("email")} onClick={() => setActiveTab("email")}>📧 メール</button>
@@ -273,13 +302,11 @@ export default function AdminChatDetailPage() {
 
             <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
 
-              {/* 顧客情報タブ */}
               {activeTab === "info" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {customerLoading && <p style={{ color: "#bbb", fontSize: 12, textAlign: "center" }}>読み込み中...</p>}
                   {customer && !customerLoading && (
                     <>
-                      {/* プラン */}
                       <section>
                         <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 6px" }}>プラン</p>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -306,7 +333,6 @@ export default function AdminChatDetailPage() {
                         )}
                       </section>
 
-                      {/* アカウント */}
                       <section>
                         <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 6px" }}>アカウント</p>
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -318,7 +344,6 @@ export default function AdminChatDetailPage() {
                         </div>
                       </section>
 
-                      {/* 購入教材 */}
                       <section>
                         <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 6px" }}>購入教材（{customer.purchases.length}件）</p>
                         {customer.purchases.length === 0
@@ -329,7 +354,6 @@ export default function AdminChatDetailPage() {
                         }
                       </section>
 
-                      {/* DL履歴 */}
                       <section>
                         <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 6px" }}>DL履歴（計{customer.downloadCount}件）</p>
                         {customer.recentDownloads.length === 0
@@ -340,59 +364,26 @@ export default function AdminChatDetailPage() {
                         }
                         {customer.downloadCount > 5 && <p style={{ fontSize: 11, color: "#bbb", margin: "4px 0 0" }}>（最新5件を表示）</p>}
                       </section>
-
-                      {/* 過去チャット */}
-                      <section>
-                        <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 6px" }}>過去のチャット（{customer.chatCount}件）</p>
-                        {customer.pastChats.length === 0
-                          ? <p style={{ fontSize: 12, color: "#ccc", margin: 0 }}>なし</p>
-                          : customer.pastChats.map((c) => (
-                            <Link key={c.id} href={`/chat/${c.id}`} style={{ display: "block", fontSize: 12, color: c.id === sessionId ? "#bbb" : "#9b6ed4", margin: "0 0 2px", textDecoration: "none" }}>
-                              {c.id === sessionId ? "▶ 現在のセッション" : `・${fmtFull(c.created_at)} (${STATUS_LABEL[c.status] ?? c.status})`}
-                            </Link>
-                          ))
-                        }
-                      </section>
                     </>
                   )}
-                  {!customer && !customerLoading && session?.user_email === null && (
-                    <p style={{ fontSize: 12, color: "#bbb", textAlign: "center" }}>メールアドレスが未取得のため顧客情報を表示できません</p>
+                  {!customer && !customerLoading && (
+                    <p style={{ fontSize: 12, color: "#bbb", textAlign: "center" }}>ユーザー情報を取得できません</p>
                   )}
                 </div>
               )}
 
-              {/* メールタブ */}
               {activeTab === "email" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {/* 送信フォーム */}
                   <section>
                     <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 8px" }}>新規メール送信</p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <input
-                        type="text"
-                        placeholder="件名"
-                        value={emailSubject}
-                        onChange={(e) => setEmailSubject(e.target.value)}
-                        style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(200,170,240,0.5)", fontSize: 12, outline: "none" }}
-                      />
-                      <textarea
-                        placeholder="本文"
-                        value={emailBody}
-                        onChange={(e) => setEmailBody(e.target.value)}
-                        rows={5}
-                        style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(200,170,240,0.5)", fontSize: 12, outline: "none", resize: "vertical" }}
-                      />
-                      <button
-                        onClick={handleSendEmail}
-                        disabled={emailSending || !emailSubject.trim() || !emailBody.trim()}
-                        style={{ padding: "9px 0", borderRadius: 20, border: "none", background: emailSubject.trim() && emailBody.trim() ? "linear-gradient(135deg,#f4b9b9,#e49bfd)" : "#e5e5e5", color: emailSubject.trim() && emailBody.trim() ? "white" : "#bbb", fontWeight: 700, fontSize: 13, cursor: emailSubject.trim() && emailBody.trim() ? "pointer" : "default" }}
-                      >
+                      <input type="text" placeholder="件名" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(200,170,240,0.5)", fontSize: 12, outline: "none" }} />
+                      <textarea placeholder="本文" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={5} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(200,170,240,0.5)", fontSize: 12, outline: "none", resize: "vertical" }} />
+                      <button onClick={handleSendEmail} disabled={emailSending || !emailSubject.trim() || !emailBody.trim()} style={{ padding: "9px 0", borderRadius: 20, border: "none", background: emailSubject.trim() && emailBody.trim() ? "linear-gradient(135deg,#f4b9b9,#e49bfd)" : "#e5e5e5", color: emailSubject.trim() && emailBody.trim() ? "white" : "#bbb", fontWeight: 700, fontSize: 13, cursor: emailSubject.trim() && emailBody.trim() ? "pointer" : "default" }}>
                         {emailSending ? "送信中..." : emailSent ? "✅ 送信しました" : "送信する"}
                       </button>
                     </div>
                   </section>
-
-                  {/* 送信履歴 */}
                   <section>
                     <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 8px" }}>送信履歴</p>
                     {emailLoading && <p style={{ fontSize: 12, color: "#bbb" }}>読み込み中...</p>}
@@ -410,23 +401,12 @@ export default function AdminChatDetailPage() {
                 </div>
               )}
 
-              {/* メモタブ */}
               {activeTab === "memo" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: "#bbb", letterSpacing: 1, textTransform: "uppercase", margin: 0 }}>管理者メモ</p>
                   <p style={{ fontSize: 11, color: "#bbb", margin: 0 }}>このメモはユーザーには表示されません</p>
-                  <textarea
-                    value={memo}
-                    onChange={(e) => setMemo(e.target.value)}
-                    placeholder="プラン検討中、過去に問い合わせあり、など..."
-                    rows={10}
-                    style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(200,170,240,0.5)", fontSize: 13, outline: "none", resize: "vertical", lineHeight: 1.6 }}
-                  />
-                  <button
-                    onClick={handleSaveMemo}
-                    disabled={memoSaving}
-                    style={{ padding: "9px 0", borderRadius: 20, border: "none", background: "linear-gradient(135deg,#f4b9b9,#e49bfd)", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                  >
+                  <textarea value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="プラン検討中、過去に問い合わせあり、など..." rows={10} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(200,170,240,0.5)", fontSize: 13, outline: "none", resize: "vertical", lineHeight: 1.6 }} />
+                  <button onClick={handleSaveMemo} disabled={memoSaving} style={{ padding: "9px 0", borderRadius: 20, border: "none", background: "linear-gradient(135deg,#f4b9b9,#e49bfd)", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                     {memoSaving ? "保存中..." : memoSaved ? "✅ 保存しました" : "メモを保存"}
                   </button>
                 </div>
