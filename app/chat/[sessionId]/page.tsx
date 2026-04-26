@@ -16,6 +16,7 @@ export default function AdminChatDetailPage() {
   const [session, setSession] = useState<{ user_email: string | null; status: string } | null>(null);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [notifying, setNotifying] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const supabase = createClient();
@@ -40,6 +41,30 @@ export default function AdminChatDetailPage() {
     ]);
     if (sess) setSession(sess);
     if (msgs) setMessages(msgs);
+  }
+
+  async function handleNotify() {
+    if (!confirm(`${session?.user_email} にチャット開始メールを送信しますか？`)) return;
+    setNotifying(true);
+    await fetch("/api/notify-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    setNotifying(false);
+    alert("メールを送信しました。");
+  }
+
+  async function handleComplete() {
+    if (!confirm("対応を完了しますか？ユーザーにお礼メッセージが送信されます。")) return;
+    setSending(true);
+    await fetch("/api/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    setSession((s) => s ? { ...s, status: "done" } : s);
+    setSending(false);
   }
 
   async function handleSend() {
@@ -68,6 +93,24 @@ export default function AdminChatDetailPage() {
         <Link href="/chat" style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", textDecoration: "none", display: "block", marginBottom: 6 }}>← 一覧に戻る</Link>
         <p style={{ fontWeight: 800, fontSize: 15, margin: 0 }}>{session?.user_email ?? "読み込み中..."}</p>
         {session && <p style={{ fontSize: 11, margin: "2px 0 0", opacity: 0.85 }}>{STATUS_LABEL[session.status] ?? session.status}</p>}
+      </div>
+
+      {/* アクションボタン */}
+      <div style={{ padding: "10px 12px", borderBottom: "0.5px solid rgba(200,170,240,0.2)", display: "flex", gap: 8, background: "white", flexShrink: 0 }}>
+        <button
+          onClick={handleNotify}
+          disabled={notifying}
+          style={{ flex: 1, padding: "9px 0", borderRadius: 20, border: "1.5px solid #9b6ed4", background: "white", color: "#9b6ed4", fontWeight: 700, cursor: "pointer", fontSize: 13 }}
+        >
+          {notifying ? "送信中..." : "📧 チャット開始メールを送る"}
+        </button>
+        <button
+          onClick={handleComplete}
+          disabled={sending || session?.status === "done"}
+          style={{ flex: 1, padding: "9px 0", borderRadius: 20, border: "none", background: session?.status === "done" ? "#e5e5e5" : "linear-gradient(135deg,#f4b9b9,#e49bfd)", color: session?.status === "done" ? "#bbb" : "white", fontWeight: 700, cursor: session?.status === "done" ? "default" : "pointer", fontSize: 13 }}
+        >
+          {session?.status === "done" ? "対応完了済み" : "✅ 対応完了"}
+        </button>
       </div>
 
       {/* メッセージ */}

@@ -7,26 +7,15 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  const { sessionId, message } = await req.json();
-
-  const { data: session } = await supabase
-    .from("chat_sessions")
-    .select("id")
-    .eq("id", sessionId)
-    .single();
-
-  if (!session) return NextResponse.json({ error: "session not found" }, { status: 404 });
+  const { sessionId } = await req.json();
 
   await supabase.from("chat_messages").insert({
     session_id: sessionId,
     role: "staff",
-    content: message,
+    content: "ご利用ありがとうございました。またいつでもお気軽にご相談ください。",
   });
 
-  await supabase
-    .from("chat_sessions")
-    .update({ status: "active" })
-    .eq("id", sessionId);
+  await supabase.from("chat_sessions").update({ status: "done" }).eq("id", sessionId);
 
   return NextResponse.json({ ok: true });
 }
