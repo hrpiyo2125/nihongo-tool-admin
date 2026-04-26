@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
@@ -44,8 +45,8 @@ export default function AdminChatDetailPage() {
   async function handleSend() {
     const content = reply.trim();
     if (!content || sending) return;
-    setReply("");
-    if (inputRef.current) inputRef.current.style.height = "auto";
+    flushSync(() => setReply(""));
+    if (inputRef.current) { inputRef.current.value = ""; inputRef.current.style.height = "auto"; }
     setSending(true);
     await fetch(`/api/staff-reply`, {
       method: "POST",
@@ -98,7 +99,7 @@ export default function AdminChatDetailPage() {
           placeholder="返信を入力... (Enterで送信、Shift+Enterで改行)"
           value={reply}
           onChange={(e) => { setReply(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); } }}
           style={{ flex: 1, padding: "9px 13px", borderRadius: 20, border: "1px solid rgba(200,170,240,0.5)", fontSize: 13, resize: "none", outline: "none", lineHeight: 1.5, overflow: "hidden", maxHeight: 120 }}
         />
         <button
