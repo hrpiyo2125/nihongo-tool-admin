@@ -47,7 +47,7 @@ export default function AdminChatDetailPage() {
     setReply("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     setSending(true);
-    await fetch(`${process.env.NEXT_PUBLIC_MAIN_SITE_URL}/api/chat/staff-reply`, {
+    await fetch(`/api/staff-reply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId, message: content }),
