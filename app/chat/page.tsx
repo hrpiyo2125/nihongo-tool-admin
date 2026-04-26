@@ -8,6 +8,7 @@ type UserRow = {
   key: string;
   user_email: string | null;
   user_id: string | null;
+  display_name: string | null;
   status: string;
   last_message: string;
   last_activity: string;
@@ -74,8 +75,11 @@ export default function ChatListPage() {
                   <span style={{ fontSize: 11, color: "#ccc" }}>{fmt(u.last_activity)}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "#555", margin: "0 0 2px" }}>
-                  {u.user_email ?? "メール未取得"}
+                  {u.display_name ?? u.user_email ?? "不明なユーザー"}
                 </p>
+                {u.display_name && u.user_email && (
+                  <p style={{ fontSize: 11, color: "#bbb", margin: "0 0 2px" }}>{u.user_email}</p>
+                )}
                 <p style={{ fontSize: 12, color: "#aaa", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {u.last_message || "メッセージなし"}
                 </p>

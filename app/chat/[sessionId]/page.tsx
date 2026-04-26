@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 
 type Message = { id: string; session_id: string; role: string; content: string; created_at: string };
-type Session = { user_email: string | null; user_id: string | null; status: string; memo?: string | null };
+type Session = { user_email: string | null; user_id: string | null; status: string; memo?: string | null; display_name?: string | null };
 type SessionMeta = { id: string; created_at: string; status: string };
 
 type CustomerInfo = {
@@ -219,7 +219,12 @@ export default function AdminChatDetailPage() {
           <Link href="/chat" style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", textDecoration: "none", display: "block", marginBottom: 4 }}>← 一覧に戻る</Link>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <p style={{ fontWeight: 800, fontSize: 15, margin: 0 }}>{session?.user_email ?? "読み込み中..."}</p>
+              <p style={{ fontWeight: 800, fontSize: 15, margin: 0 }}>
+                {session ? (session.display_name ?? session.user_email ?? "不明なユーザー") : "読み込み中..."}
+              </p>
+              {session?.display_name && session.user_email && (
+                <p style={{ fontSize: 11, margin: "1px 0 0", opacity: 0.8 }}>{session.user_email}</p>
+              )}
               {session && <p style={{ fontSize: 11, margin: "2px 0 0", opacity: 0.85 }}>{STATUS_LABEL[session.status] ?? session.status} · 計{allSessions.length}セッション</p>}
             </div>
             <div style={{ display: "flex", gap: 8 }}>

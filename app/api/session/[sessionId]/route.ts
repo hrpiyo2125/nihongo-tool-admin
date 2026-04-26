@@ -54,8 +54,19 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ sessio
     .in("session_id", allSessionIds)
     .order("created_at", { ascending: true });
 
+  // ユーザー名をprofilesから取得
+  let display_name: string | null = null;
+  if (session.user_id) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", session.user_id)
+      .single();
+    display_name = profile?.full_name ?? null;
+  }
+
   return NextResponse.json({
-    session,
+    session: { ...session, display_name },
     allSessions,
     messages: messages ?? [],
   });
