@@ -130,17 +130,27 @@ export default function AdminChatDetailPage() {
   async function handleNotify() {
     if (!confirm(`${session?.user_email} にチャット開始メールを送信しますか？`)) return;
     setNotifying(true);
-    await fetch("/api/notify-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
-    setNotifying(false);
-    alert("メールを送信しました。");
+    try {
+      await fetch("/api/notify-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
+      alert("メールを送信しました。");
+    } catch {
+      alert("送信に失敗しました。再度お試しください。");
+    } finally {
+      setNotifying(false);
+    }
   }
 
   async function handleComplete() {
     if (!confirm("対応を完了しますか？ユーザーにお礼メッセージが送信されます。")) return;
     setSending(true);
-    await fetch("/api/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
-    setSession((s) => s ? { ...s, status: "done" } : s);
-    setSending(false);
+    try {
+      await fetch("/api/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
+      setSession((s) => s ? { ...s, status: "done" } : s);
+    } catch {
+      alert("完了処理に失敗しました。再度お試しください。");
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleSend() {
@@ -149,11 +159,19 @@ export default function AdminChatDetailPage() {
     flushSync(() => setReply(""));
     if (inputRef.current) { inputRef.current.value = ""; inputRef.current.style.height = "auto"; }
     setSending(true);
-    await fetch("/api/staff-reply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: content }) });
-    setSending(false);
-    const res = await fetch(`/api/session/${sessionId}`);
-    const data = await res.json();
-    if (data.session) setSession(data.session);
+    try {
+      const res = await fetch("/api/staff-reply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: content }) });
+      if (!res.ok) throw new Error("staff-reply failed");
+      const sessionRes = await fetch(`/api/session/${sessionId}`);
+      const data = await sessionRes.json();
+      if (data.session) setSession(data.session);
+    } catch {
+      alert("送信に失敗しました。再度お試しください。");
+      setReply(content);
+      if (inputRef.current) inputRef.current.value = content;
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleSaveMemo() {
