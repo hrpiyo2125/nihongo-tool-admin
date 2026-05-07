@@ -74,12 +74,15 @@ export default function AdminChatDetailPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
+  function clearTyping() {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: false }) });
+  }
+
   function handleTyping() {
     fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: true }) });
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => {
-      fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: false }) });
-    }, 4000);
+    typingTimerRef.current = setTimeout(clearTyping, 2000);
   }
 
   useEffect(() => {
@@ -167,6 +170,7 @@ export default function AdminChatDetailPage() {
   async function handleSend() {
     const content = reply.trim();
     if (!content || sending) return;
+    clearTyping();
     flushSync(() => setReply(""));
     if (inputRef.current) { inputRef.current.value = ""; inputRef.current.style.height = "auto"; }
     setSending(true);
