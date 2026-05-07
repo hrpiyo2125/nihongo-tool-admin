@@ -80,6 +80,7 @@ export default function AdminChatDetailPage() {
 
   function handleTyping() {
     fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: true }) });
+    markAsRead();
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: false }) });
@@ -89,11 +90,9 @@ export default function AdminChatDetailPage() {
   useEffect(() => {
     if (sessionStorage.getItem("admin_auth") !== "ok") { router.replace("/"); return; }
     load();
-    markAsRead();
     const channel = supabase.channel(`admin:${sessionId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `session_id=eq.${sessionId}` }, (payload) => {
         setMessages((prev) => [...prev, payload.new as Message]);
-        markAsRead();
       })
       .subscribe();
     return () => {
