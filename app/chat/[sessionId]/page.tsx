@@ -75,14 +75,14 @@ export default function AdminChatDetailPage() {
   const [emailSent, setEmailSent] = useState(false);
 
   async function markAsRead() {
-    await supabase.from("chat_sessions").update({ staff_last_read_at: new Date().toISOString() }).eq("id", sessionId);
+    await fetch("/api/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId }) });
   }
 
   function handleTyping() {
-    supabase.from("chat_sessions").update({ staff_typing_at: new Date().toISOString() }).eq("id", sessionId);
+    fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: true }) });
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
-      supabase.from("chat_sessions").update({ staff_typing_at: null }).eq("id", sessionId);
+      fetch("/api/typing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, typing: false }) });
     }, 4000);
   }
 
