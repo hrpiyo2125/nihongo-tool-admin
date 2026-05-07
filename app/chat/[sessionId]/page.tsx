@@ -65,6 +65,7 @@ export default function AdminChatDetailPage() {
   const [memo, setMemo] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [memoSaved, setMemoSaved] = useState(false);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
   const [emailLoading, setEmailLoading] = useState(false);
@@ -73,16 +74,32 @@ export default function AdminChatDetailPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
+  async function markAsRead() {
+    await supabase.from("chat_sessions").update({ staff_last_read_at: new Date().toISOString() }).eq("id", sessionId);
+  }
+
+  function handleTyping() {
+    supabase.from("chat_sessions").update({ staff_typing_at: new Date().toISOString() }).eq("id", sessionId);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      supabase.from("chat_sessions").update({ staff_typing_at: null }).eq("id", sessionId);
+    }, 4000);
+  }
+
   useEffect(() => {
     if (sessionStorage.getItem("admin_auth") !== "ok") { router.replace("/"); return; }
     load();
-    // 現在のセッションへのリアルタイム購読
+    markAsRead();
     const channel = supabase.channel(`admin:${sessionId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `session_id=eq.${sessionId}` }, (payload) => {
         setMessages((prev) => [...prev, payload.new as Message]);
+        markAsRead();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
   }, [sessionId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -301,7 +318,7 @@ export default function AdminChatDetailPage() {
                 rows={1}
                 placeholder="返信を入力... (Enterで送信、Shift+Enterで改行)"
                 value={reply}
-                onChange={(e) => { setReply(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
+                onChange={(e) => { setReply(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; handleTyping(); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); } }}
                 style={{ flex: 1, padding: "9px 13px", borderRadius: 20, border: "1px solid rgba(200,170,240,0.5)", fontSize: 13, resize: "none", outline: "none", lineHeight: 1.5, overflow: "hidden", maxHeight: 120 }}
               />
